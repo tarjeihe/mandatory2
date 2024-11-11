@@ -35,6 +35,7 @@ class FunctionSpace:
 
     @property
     def reference_domain(self):
+        #return self.reference_domain
         raise RuntimeError
 
     @property
@@ -109,10 +110,14 @@ class Legendre(FunctionSpace):
         return self.basis_function(j).deriv(k)
 
     def L2_norm_sq(self, N):
-        raise NotImplementedError
+	    inds = np.arange(0, N, 1)
+	    norms_sq = 2.0/(2.0*inds+1)
+	    return norms_sq 
+        #raise NotImplementedError
 
     def mass_matrix(self):
-        raise NotImplementedError
+	    A = sparse.diags(self.L2_norm_sq(self.N+1), offsets=0, shape=(self.N+1, self.N+1), format='csr')
+        #raise NotImplementedError
 
     def eval(self, uh, xj):
         xj = np.atleast_1d(xj)
@@ -137,10 +142,15 @@ class Chebyshev(FunctionSpace):
         return 1/sp.sqrt(1-x**2)
 
     def L2_norm_sq(self, N):
-        raise NotImplementedError
+	    L2_sq = np.full(N, np.pi / 2)
+	    L2_sq[0] = np.pi
+        return L2_sq
+        #raise NotImplementedError
 
     def mass_matrix(self):
-        raise NotImplementedError
+        A = sparse.diags(self.L2_norm_sq(self.N+1), offsets=0, shape=(self.N+1, self.N+1), format='csr')
+        return A
+	    #raise NotImplementedError
 
     def eval(self, uh, xj):
         xj = np.atleast_1d(xj)
@@ -205,16 +215,29 @@ class Sines(Trigonometric):
 class Cosines(Trigonometric):
 
     def __init__(self, N, domain=(0, 1), bc=(0, 0)):
-        raise NotImplementedError
+	    Trigonometric.__init__(self, N, domain=domain)
+	    self.B = Dirichlet(bc, domain, self.reference_domain)
+        #raise NotImplementedError
 
     def basis_function(self, j, sympy=False):
-        raise NotImplementedError
+        if sympy:
+            return sp.cos((j+1)*sp.pi*x)
+        return lambda Xj: np.cos((j+1)*np.pi*Xj)
+        #raise NotImplementedError
 
     def derivative_basis_function(self, j, k=1):
-        raise NotImplementedError
+        scale = ((j+1)*np.pi)**k * {0: -1, 1: 1}[(k//2) % 2]
+        if k % 2 == 0:
+            return lambda Xj: scale*np.cos((j+1)*np.pi*Xj)
+        else:
+            return lambda Xj: scale*np.sin((j+1)*np.pi*Xj)
+        #raise NotImplementedError
 
     def L2_norm_sq(self, N):
-        raise NotImplementedError
+	    norms = np.full(N+1, 0.5)
+        norms[0] = 1.0
+        return norms
+        #raise NotImplementedError
 
 # Create classes to hold the boundary function
 
@@ -222,8 +245,6 @@ class Dirichlet:
 
     def __init__(self, bc, domain, reference_domain):
         d = domain
-        r = reference_domain
-        h = d[1]-d[0]
         self.bc = bc
         self.x = bc[0]*(d[1]-x)/h + bc[1]*(x-d[0])/h           # in physical coordinates
         self.xX = map_expression_true_domain(self.x, x, d, r)  # in reference coordinates
@@ -289,15 +310,25 @@ class DirichletLegendre(Composite, Legendre):
         self.S = sparse.diags((1, -1), (0, 2), shape=(N+1, N+3), format='csr')
 
     def basis_function(self, j, sympy=False):
-        raise NotImplementedError
+        if sympy:
+            return sp.legendre(j, x) - sp.legendre(j + 2, x)
+        return Leg.basis(j)-Leg.basis(j+2)
+        #raise NotImplementedError
 
 
 class NeumannLegendre(Composite, Legendre):
     def __init__(self, N, domain=(-1, 1), bc=(0, 0), constraint=0):
-        raise NotImplementedError
+        Legendre.__init__(self, N, domain=domain)
+        self.B = Neumann(bc, domain, self.reference_domain)
+        self.S = sparse.diags((1, -1), (0, 2), shape=(N+1, N+3), format='csr')
+        #raise NotImplementedError
 
     def basis_function(self, j, sympy=False):
-        raise NotImplementedError
+        if sympy:
+            return sp.legendre(j, x) - j*(j+1)/((j+2)*(j+3))*sp.legendre(j+2, x)
+        else:
+            return Leg.basis(j)-j*(j+1)/((j+2)*(j+3))*Leg.basis(j+2)
+        #raise NotImplementedError
 
 
 class DirichletChebyshev(Composite, Chebyshev):
@@ -315,10 +346,18 @@ class DirichletChebyshev(Composite, Chebyshev):
 
 class NeumannChebyshev(Composite, Chebyshev):
     def __init__(self, N, domain=(-1, 1), bc=(0, 0), constraint=0):
-        raise NotImplementedError
+        Chebyshev.__init__(self, N, domain=domain)
+        self.B = Neumann(bc, domain, self.reference_domain)
+        j = np.arange(N+1)
+        self.S = sparse.diags((1, -(j/(j+2))**2), (0, 2), shape=(N+1, N+3), format='csr')
+        #raise NotImplementedError
 
     def basis_function(self, j, sympy=False):
-        raise NotImplementedError
+        if sympy:
+            return sp.cos(j*sp.acos(x)) - (j/(j+2))**2*sp.cos((j+2)*sp.acos(x))
+        else:
+            return Cheb.basis(j)-(j/(j+2))**2*Cheb.basis(j+2)
+        #raise NotImplementedError
 
 
 class BasisFunction:
